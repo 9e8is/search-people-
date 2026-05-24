@@ -159,16 +159,6 @@ with st.sidebar:
     box_color_bgr = color_options[selected_color]
     
     st.markdown("---")
-    st.header("Системная информация")
-    
-    gpu_available, gpu_name, gpu_memory = check_gpu()
-    if gpu_available:
-        st.success(f"GPU: {gpu_name[:30]}")
-        st.info(f"Память: {gpu_memory:.1f} GB")
-    else:
-        st.info("Используется CPU")
-    
-    st.markdown("---")
     st.header("Инструкция")
     st.markdown("""
     Как использовать:
