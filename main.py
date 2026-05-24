@@ -59,6 +59,8 @@ def load_model():
 # Инициализация session_state для хранения результатов
 if 'processed_images' not in st.session_state:
     st.session_state.processed_images = {}
+if 'processing_complete' not in st.session_state:
+    st.session_state.processing_complete = False
 
 # Функция отрисовки рамок
 def draw_boxes_with_confidence(image, boxes, show_conf=True, thickness=2, color=(0, 255, 0)):
@@ -164,7 +166,8 @@ with st.sidebar:
     Как использовать:
     1. Загрузите изображения
     2. Нажмите Обработать все изображения
-    3. Скачайте результаты по отдельности или все сразу
+    3. Результаты будут появляться по мере обработки
+    4. Скачайте результаты по отдельности или все сразу
     """)
 
 # Загрузка модели (без сообщений)
@@ -186,10 +189,15 @@ if uploaded_files:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("Обработать все изображения", type="primary", use_container_width=True):
+            # Сбрасываем результаты перед новой обработкой
+            st.session_state.processed_images = {}
+            st.session_state.processing_complete = False
+            
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            st.session_state.processed_images = {}
+            # Создаем контейнер для результатов
+            results_container = st.container()
             
             for idx, uploaded_file in enumerate(uploaded_files):
                 status_text.text(f"Обработка: {uploaded_file.name} ({idx+1}/{len(uploaded_files)})")
@@ -199,17 +207,55 @@ if uploaded_files:
                 )
                 
                 if result_img is not None:
+                    # Сохраняем результат
                     st.session_state.processed_images[uploaded_file.name] = {
                         'result': result_img,
                         'boxes_count': boxes_count
                     }
+                    
+                    # Показываем результат сразу после обработки
+                    with results_container:
+                        st.markdown("---")
+                        st.subheader("Результаты обработки")
+                        
+                        # Показываем все обработанные на данный момент изображения
+                        for filename, data in st.session_state.processed_images.items():
+                            with st.expander(f"{filename} - найдено {data['boxes_count']} людей", expanded=True):
+                                st.image(data['result'], use_container_width=True)
+                                
+                                col_download1, col_download2, col_download3 = st.columns([1, 2, 1])
+                                with col_download2:
+                                    st.markdown(f"**Найдено людей:** {data['boxes_count']}")
+                                    
+                                    result_pil = Image.fromarray(data['result'])
+                                    buf = io.BytesIO()
+                                    result_pil.save(buf, format="JPEG", quality=95)
+                                    buf.seek(0)
+                                    
+                                    name, ext = os.path.splitext(filename)
+                                    if data['boxes_count'] > 0:
+                                        download_name = f"Люди_{name}{ext}"
+                                    else:
+                                        download_name = filename
+                                    
+                                    st.download_button(
+                                        label="Скачать результат",
+                                        data=buf,
+                                        file_name=download_name,
+                                        mime="image/jpeg",
+                                        key=f"download_{filename}_{idx}",
+                                        use_container_width=True
+                                    )
                 
                 progress_bar.progress((idx + 1) / len(uploaded_files))
             
-            status_text.text("Обработка завершена")
+            st.session_state.processing_complete = True
+            status_text.text("Обработка завершена!")
+            progress_bar.empty()
             st.rerun()
     
-    if st.session_state.processed_images:
+    # Если есть результаты и обработка завершена, показываем кнопки управления
+    if st.session_state.processed_images and st.session_state.processing_complete:
         st.markdown("---")
         
         col_buttons1, col_buttons2, col_buttons3 = st.columns([1, 1, 1])
@@ -233,38 +279,14 @@ if uploaded_files:
         with col_buttons3:
             if st.button("Очистить результаты", use_container_width=True):
                 st.session_state.processed_images = {}
+                st.session_state.processing_complete = False
                 st.rerun()
-        
-        st.markdown("---")
-        st.subheader("Результаты обработки")
-        
-        for filename, data in st.session_state.processed_images.items():
-            with st.expander(f"{filename} - найдено {data['boxes_count']} людей", expanded=True):
-                st.image(data['result'], use_container_width=True)
-                
-                col_download1, col_download2, col_download3 = st.columns([1, 2, 1])
-                with col_download2:
-                    st.markdown(f"**Найдено людей:** {data['boxes_count']}")
-                    
-                    result_pil = Image.fromarray(data['result'])
-                    buf = io.BytesIO()
-                    result_pil.save(buf, format="JPEG", quality=95)
-                    buf.seek(0)
-                    
-                    name, ext = os.path.splitext(filename)
-                    if data['boxes_count'] > 0:
-                        download_name = f"Люди_{name}{ext}"
-                    else:
-                        download_name = filename
-                    
-                    st.download_button(
-                        label="Скачать результат",
-                        data=buf,
-                        file_name=download_name,
-                        mime="image/jpeg",
-                        key=f"download_{filename}",
-                        use_container_width=True
-                    )
+    
+    elif st.session_state.processed_images and not st.session_state.processing_complete:
+        # Если обработка не завершена, показываем кнопку очистки
+        if st.button("Очистить результаты", use_container_width=True):
+            st.session_state.processed_images = {}
+            st.rerun()
 
 st.markdown("---")
 st.markdown(
