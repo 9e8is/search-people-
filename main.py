@@ -3,10 +3,12 @@ import cv2
 import numpy as np
 import os
 import tempfile
+import zipfile
 from ultralytics import YOLO
 from PIL import Image
 import io
 import torch
+from datetime import datetime
 
 # Настройка страницы
 st.set_page_config(
@@ -41,7 +43,7 @@ def load_model():
     try:
         if not os.path.exists(MODEL_PATH):
             st.error(f"Модель не найдена по пути: {MODEL_PATH}")
-            st.info()
+            st.info("Убедитесь, что файл модели best.pt находится в папке model/")
             
             if os.path.exists("model"):
                 files = os.listdir("model")
@@ -119,6 +121,28 @@ def process_single_image(uploaded_file, model, show_conf, box_thickness, color):
         st.error(f"Ошибка обработки изображения: {e}")
         return None, 0
 
+# Функция для создания ZIP-архива со всеми результатами
+def create_zip_archive(images_data):
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for filename, data in images_data.items():
+            result_pil = Image.fromarray(data['result'])
+            img_buffer = io.BytesIO()
+            result_pil.save(img_buffer, format="JPEG", quality=95)
+            img_buffer.seek(0)
+            
+            name, ext = os.path.splitext(filename)
+            if data['boxes_count'] > 0:
+                zip_filename = f"Пешеход_{name}{ext}"
+            else:
+                zip_filename = filename
+            
+            zip_file.writestr(zip_filename, img_buffer.getvalue())
+    
+    zip_buffer.seek(0)
+    return zip_buffer
+
 # Боковая панель с настройками
 with st.sidebar:
     st.header("Настройки визуализации")
@@ -157,18 +181,13 @@ with st.sidebar:
     Как использовать:
     1. Загрузите изображения
     2. Нажмите Обработать все изображения
-    3. Скачайте результаты
+    3. Скачайте результаты по отдельности или все сразу
     
-    Советы:
-    - Если пешеходы не находятся, попробуйте другие изображения
-    - Поддерживаются форматы: JPG, PNG, BMP, TIFF
     """)
     
     st.markdown("---")
     st.info(f"""
     Модель: YOLOv11l
-    Задача: Обнаружение пешеходов
-    Тип данных: Аэроснимки
     Параметры детекции: conf=0.25, iou=0.45
     """)
 
@@ -217,32 +236,64 @@ if uploaded_files:
     
     if st.session_state.processed_images:
         st.markdown("---")
+        
+        # Кнопки для скачивания всех результатов
+        col_buttons1, col_buttons2, col_buttons3 = st.columns([1, 1, 1])
+        
+        with col_buttons1:
+            # Кнопка "Скачать все результаты"
+            zip_buffer = create_zip_archive(st.session_state.processed_images)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            st.download_button(
+                label="Скачать все результаты (ZIP)",
+                data=zip_buffer,
+                file_name=f"результаты_детекции_{timestamp}.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+        
+        with col_buttons2:
+            # Информация о количестве
+            total_images = len(st.session_state.processed_images)
+            total_people = sum(data['boxes_count'] for data in st.session_state.processed_images.values())
+            st.metric("Всего обработано", f"{total_images} изображений", delta=f"{total_people} пешеходов")
+        
+        with col_buttons3:
+            # Кнопка очистки результатов
+            if st.button("Очистить результаты", use_container_width=True):
+                st.session_state.processed_images = {}
+                st.rerun()
+        
+        st.markdown("---")
         st.subheader("Результаты обработки")
         
         for filename, data in st.session_state.processed_images.items():
             with st.expander(f"{filename} - найдено {data['boxes_count']} пешеходов", expanded=True):
                 st.image(data['result'], use_container_width=True)
                 
-                st.markdown(f"**Найдено пешеходов:** {data['boxes_count']}")
-                
-                result_pil = Image.fromarray(data['result'])
-                buf = io.BytesIO()
-                result_pil.save(buf, format="JPEG", quality=95)
-                buf.seek(0)
-                
-                name, ext = os.path.splitext(filename)
-                if data['boxes_count'] > 0:
-                    download_name = f"Пешеход_{name}{ext}"
-                else:
-                    download_name = filename
-                
-                st.download_button(
-                    label="Скачать результат",
-                    data=buf,
-                    file_name=download_name,
-                    mime="image/jpeg",
-                    key=f"download_{filename}"
-                )
+                col_download1, col_download2, col_download3 = st.columns([1, 2, 1])
+                with col_download2:
+                    st.markdown(f"**Найдено пешеходов:** {data['boxes_count']}")
+                    
+                    result_pil = Image.fromarray(data['result'])
+                    buf = io.BytesIO()
+                    result_pil.save(buf, format="JPEG", quality=95)
+                    buf.seek(0)
+                    
+                    name, ext = os.path.splitext(filename)
+                    if data['boxes_count'] > 0:
+                        download_name = f"Пешеход_{name}{ext}"
+                    else:
+                        download_name = filename
+                    
+                    st.download_button(
+                        label="Скачать результат",
+                        data=buf,
+                        file_name=download_name,
+                        mime="image/jpeg",
+                        key=f"download_{filename}",
+                        use_container_width=True
+                    )
 
 st.markdown("---")
 st.markdown(
