@@ -56,9 +56,11 @@ def load_model():
         st.error(f"Ошибка загрузки модели: {e}")
         return None
 
-# Инициализация session_state для хранения результатов
+# Инициализация session_state для хранения результатов и загруженных файлов
 if 'processed_images' not in st.session_state:
     st.session_state.processed_images = {}
+if 'uploaded_files_state' not in st.session_state:
+    st.session_state.uploaded_files_state = None
 
 # Функция отрисовки рамок
 def draw_boxes_with_confidence(image, boxes, show_conf=True, thickness=2, color=(0, 255, 0)):
@@ -137,6 +139,12 @@ def create_zip_archive(images_data):
     zip_buffer.seek(0)
     return zip_buffer
 
+# Функция очистки всех данных
+def clear_all():
+    st.session_state.processed_images = {}
+    st.session_state.uploaded_files_state = None
+    st.rerun()
+
 # Боковая панель с настройками
 with st.sidebar:
     st.header("Настройки визуализации")
@@ -166,6 +174,10 @@ with st.sidebar:
     2. Нажмите Обработать все изображения
     3. Скачайте результаты по отдельности или все сразу
     """)
+    
+    st.markdown("---")
+    if st.button("Очистить все (изображения и результаты)", use_container_width=True):
+        clear_all()
 
 # Загрузка модели (без сообщений)
 model = load_model()
@@ -179,10 +191,22 @@ st.subheader("Загрузите изображения для обработк�
 uploaded_files = st.file_uploader(
     "Выберите одно или несколько изображений",
     type=['jpg', 'jpeg', 'png', 'bmp', 'tiff'],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key="file_uploader"
 )
 
+# Сохраняем загруженные файлы в session_state
 if uploaded_files:
+    st.session_state.uploaded_files_state = uploaded_files
+elif uploaded_files is None and st.session_state.uploaded_files_state is not None:
+    # Если пользователь очистил загрузчик через кнопку "Очистить все"
+    if st.session_state.processed_images == {}:
+        st.session_state.uploaded_files_state = None
+
+# Используем сохраненные файлы или новые
+current_files = uploaded_files if uploaded_files else st.session_state.uploaded_files_state
+
+if current_files:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("Обработать все изображения", type="primary", use_container_width=True):
@@ -191,8 +215,8 @@ if uploaded_files:
             
             st.session_state.processed_images = {}
             
-            for idx, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Обработка: {uploaded_file.name} ({idx+1}/{len(uploaded_files)})")
+            for idx, uploaded_file in enumerate(current_files):
+                status_text.text(f"Обработка: {uploaded_file.name} ({idx+1}/{len(current_files)})")
                 
                 result_img, boxes_count = process_single_image(
                     uploaded_file, model, show_conf, box_thickness, box_color_bgr
@@ -204,7 +228,7 @@ if uploaded_files:
                         'boxes_count': boxes_count
                     }
                 
-                progress_bar.progress((idx + 1) / len(uploaded_files))
+                progress_bar.progress((idx + 1) / len(current_files))
             
             status_text.text("Обработка завершена")
             st.rerun()
