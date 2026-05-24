@@ -12,13 +12,13 @@ from datetime import datetime
 
 # Настройка страницы
 st.set_page_config(
-    page_title="Обнаружение пешеходов на аэроснимках",
+    page_title="Обнаружение людей на аэрофотоснимках",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # Заголовок приложения
-st.title("Обнаружение пешеходов на аэроснимках")
+st.title("Обнаружение людей на аэрофотоснимках")
 st.markdown("---")
 
 # Путь к модели в GitHub (относительный путь)
@@ -43,18 +43,13 @@ def load_model():
     try:
         if not os.path.exists(MODEL_PATH):
             st.error(f"Модель не найдена по пути: {MODEL_PATH}")
-            st.info("Убедитесь, что файл модели best.pt находится в папке model/")
-            
             if os.path.exists("model"):
                 files = os.listdir("model")
                 st.write(f"Файлы в папке model: {files}")
             return None
         
-        with st.spinner("Загрузка модели YOLOv11l..."):
-            model = YOLO(MODEL_PATH)
-        
+        model = YOLO(MODEL_PATH)
         model.to('cpu')
-        st.success("Модель успешно загружена")
         return model
         
     except Exception as e:
@@ -99,7 +94,6 @@ def process_single_image(uploaded_file, model, show_conf, box_thickness, color):
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
             cv2.imwrite(temp_path, img_bgr)
         
-        # Используем стандартные параметры
         results = model(temp_path, conf=CONFIDENCE_THRESHOLD, iou=IOU_THRESHOLD, max_det=MAX_DETECTIONS)
         
         result_img = draw_boxes_with_confidence(
@@ -134,7 +128,7 @@ def create_zip_archive(images_data):
             
             name, ext = os.path.splitext(filename)
             if data['boxes_count'] > 0:
-                zip_filename = f"Пешеход_{name}{ext}"
+                zip_filename = f"Люди_{name}{ext}"
             else:
                 zip_filename = filename
             
@@ -150,7 +144,6 @@ with st.sidebar:
     show_conf = st.checkbox("Показывать уверенность", value=True)
     box_thickness = st.slider("Толщина рамки", 1, 5, 2)
     
-    # Выбор цвета рамки из нескольких вариантов
     color_options = {
         "Зеленый": (0, 255, 0),
         "Красный": (0, 0, 255),
@@ -173,7 +166,7 @@ with st.sidebar:
         st.success(f"GPU: {gpu_name[:30]}")
         st.info(f"Память: {gpu_memory:.1f} GB")
     else:
-        st.info("Используется CPU (облачная среда)")
+        st.info("Используется CPU")
     
     st.markdown("---")
     st.header("Инструкция")
@@ -182,18 +175,10 @@ with st.sidebar:
     1. Загрузите изображения
     2. Нажмите Обработать все изображения
     3. Скачайте результаты по отдельности или все сразу
-    
-    """)
-    
-    st.markdown("---")
-    st.info(f"""
-    Модель: YOLOv11l
-    Параметры детекции: conf=0.25, iou=0.45
     """)
 
-# Загрузка модели
-with st.spinner("Загрузка модели YOLOv11l..."):
-    model = load_model()
+# Загрузка модели (без сообщений)
+model = load_model()
 
 if model is None:
     st.stop()
@@ -237,11 +222,9 @@ if uploaded_files:
     if st.session_state.processed_images:
         st.markdown("---")
         
-        # Кнопки для скачивания всех результатов
         col_buttons1, col_buttons2, col_buttons3 = st.columns([1, 1, 1])
         
         with col_buttons1:
-            # Кнопка "Скачать все результаты"
             zip_buffer = create_zip_archive(st.session_state.processed_images)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             st.download_button(
@@ -253,13 +236,11 @@ if uploaded_files:
             )
         
         with col_buttons2:
-            # Информация о количестве
             total_images = len(st.session_state.processed_images)
             total_people = sum(data['boxes_count'] for data in st.session_state.processed_images.values())
-            st.metric("Всего обработано", f"{total_images} изображений", delta=f"{total_people} пешеходов")
+            st.metric("Всего обработано", f"{total_images} изображений", delta=f"{total_people} людей")
         
         with col_buttons3:
-            # Кнопка очистки результатов
             if st.button("Очистить результаты", use_container_width=True):
                 st.session_state.processed_images = {}
                 st.rerun()
@@ -268,12 +249,12 @@ if uploaded_files:
         st.subheader("Результаты обработки")
         
         for filename, data in st.session_state.processed_images.items():
-            with st.expander(f"{filename} - найдено {data['boxes_count']} пешеходов", expanded=True):
+            with st.expander(f"{filename} - найдено {data['boxes_count']} людей", expanded=True):
                 st.image(data['result'], use_container_width=True)
                 
                 col_download1, col_download2, col_download3 = st.columns([1, 2, 1])
                 with col_download2:
-                    st.markdown(f"**Найдено пешеходов:** {data['boxes_count']}")
+                    st.markdown(f"**Найдено людей:** {data['boxes_count']}")
                     
                     result_pil = Image.fromarray(data['result'])
                     buf = io.BytesIO()
@@ -282,7 +263,7 @@ if uploaded_files:
                     
                     name, ext = os.path.splitext(filename)
                     if data['boxes_count'] > 0:
-                        download_name = f"Пешеход_{name}{ext}"
+                        download_name = f"Люди_{name}{ext}"
                     else:
                         download_name = filename
                     
@@ -298,7 +279,7 @@ if uploaded_files:
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray; font-size: 14px;'>"
-    "Обнаружение пешеходов на аэроснимках | YOLOv11l | Streamlit Cloud"
+    "Обнаружение людей на аэрофотоснимках | YOLOv11l"
     "</div>",
     unsafe_allow_html=True
 )
